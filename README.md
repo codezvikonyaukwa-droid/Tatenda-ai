@@ -25,6 +25,13 @@ The key is encrypted on-device. It is not hardcoded in the source, printed to lo
 ## Deliberately deferred
 Always-on wake phrase, background microphone, and broad phone control need separate lifecycle, privacy, battery, and security testing. This build uses explicit tap-to-talk. Protected system actions remain controlled by Android.
 
+
+## Multi-role AI and credential storage
+- Independent coding, memory, diagnostics, and general model profiles are defined in AiRoleRouter.
+- SecureProviderKeyStore stores separate provider credentials using AES-GCM and an Android Keystore master key.
+- The current live chat transport remains OpenRouter. Provider profiles are configuration scaffolding until each direct provider adapter is implemented and verified.
+- Voice ID configured for the planned voice adapter: e13fa398a7f445a685316a3de6089ce7. The current build still uses Android system text-to-speech.
+
 ## Build
 Open in Android Studio with JDK 17, sync Gradle, then run on device.
 
