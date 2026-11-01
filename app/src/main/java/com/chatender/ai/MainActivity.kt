@@ -143,6 +143,11 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         if (statusCode == TextToSpeech.SUCCESS) tts?.language = Locale.getDefault()
     }
 
+    override fun onPause() {
+        speech?.cancel()
+        super.onPause()
+    }
+
     override fun onDestroy() {
         speech?.destroy()
         tts?.stop()
