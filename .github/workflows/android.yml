@@ -10,6 +10,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate desktop workspace
+        run: |
+          node --check desktop/app.js
+          test -s desktop/index.html
+          test -s desktop/styles.css
+          test -s desktop/README.md
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
