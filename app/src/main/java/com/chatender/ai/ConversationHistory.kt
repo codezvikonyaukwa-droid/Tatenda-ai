@@ -1,7 +1,7 @@
 package com.chatender.ai
 
 import android.content.Context
-import android.util.Base64
+import java.util.Base64
 
 data class ChatMessage(val role: String, val content: String)
 
@@ -15,7 +15,7 @@ class ConversationHistory internal constructor(private val storage: MemoryStorag
         val encoded = storage.read(KEY_MESSAGES).orEmpty()
         return encoded.lineSequence().filter { it.isNotBlank() }.mapNotNull { line ->
             runCatching {
-                val decoded = String(Base64.decode(line, Base64.DEFAULT), Charsets.UTF_8)
+                val decoded = String(Base64.getUrlDecoder().decode(line), Charsets.UTF_8)
                 val split = decoded.indexOf('\n')
                 if (split <= 0) null else ChatMessage(decoded.substring(0, split), decoded.substring(split + 1))
             }.getOrNull()
@@ -26,7 +26,7 @@ class ConversationHistory internal constructor(private val storage: MemoryStorag
         if (role !in setOf("user", "assistant") || content.isBlank()) return
         val next = (messages() + ChatMessage(role, content.take(MAX_CONTENT_LENGTH))).takeLast(MAX_MESSAGES)
         val encoded = next.joinToString("\n") {
-            Base64.encodeToString("${it.role}\n${it.content}".toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+            Base64.getUrlEncoder().withoutPadding().encodeToString("${it.role}\n${it.content}".toByteArray(Charsets.UTF_8))
         }
         storage.write(KEY_MESSAGES, encoded)
     }
