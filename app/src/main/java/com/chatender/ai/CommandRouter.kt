@@ -12,7 +12,7 @@ class CommandRouter {
         if (input.isEmpty()) return CommandResult(CommandAction.UNKNOWN, "I didn't hear a command.")
         return when {
             input in setOf("help", "what can you do", "commands") ->
-                CommandResult(CommandAction.HELP, "Ask for battery status, the time, Wi-Fi settings, Bluetooth settings, or device settings.")
+                CommandResult(CommandAction.HELP, "Ask for battery status, the time, Wi-Fi settings, Bluetooth settings, or device settings. Say what was my last command to recall it, or forget my last command to clear it.")
             "battery" in input || "charge" in input ->
                 CommandResult(CommandAction.BATTERY, batteryPercent?.let { "Battery is at $it percent." } ?: "I can't read the battery level right now.")
             input == "time" || "what time" in input ->
