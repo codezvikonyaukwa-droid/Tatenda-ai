@@ -64,12 +64,20 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val speak = Button(this).apply { text = "SPEAK"; setOnClickListener { beginListening() } }
         val help = Button(this).apply { text = "HELP"; setOnClickListener { respond(router.route("help").reply) } }
         val battery = Button(this).apply { text = "BATTERY"; setOnClickListener { handleCommand("battery") } }
+        val clearMemory = Button(this).apply {
+            text = "CLEAR MEMORY"
+            setOnClickListener {
+                memory.forgetLastCommand()
+                respond("The saved last command has been cleared.")
+            }
+        }
         root.addView(title, match())
         root.addView(status, match())
         root.addView(transcript, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         root.addView(speak, match())
         root.addView(help, match())
         root.addView(battery, match())
+        root.addView(clearMemory, match())
         setContentView(root)
     }
 
@@ -127,7 +135,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
                 respond(memory.lastCommand()?.let { "Your last command was: $it" } ?: "I don't have a saved command yet.")
                 return
             }
-            command.equals("forget my last command", ignoreCase = true) -> {
+            command.equals("forget my last command", ignoreCase = true) || command.equals("clear memory", ignoreCase = true) -> {
                 memory.forgetLastCommand()
                 respond("I've cleared the saved last command.")
                 return
