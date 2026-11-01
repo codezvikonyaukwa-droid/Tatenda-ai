@@ -30,6 +30,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var transcript: TextView
     private val router = CommandRouter()
     private lateinit var memory: ConversationMemory
+    private lateinit var history: ConversationHistory
     private lateinit var apiKeyStore: SecureApiKeyStore
     private val aiExecutor = Executors.newSingleThreadExecutor()
     private lateinit var messageInput: EditText
@@ -39,6 +40,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         memory = ConversationMemory(this)
+        history = ConversationHistory(this)
         apiKeyStore = SecureApiKeyStore(this)
         tts = TextToSpeech(this, this)
         buildInterface()
@@ -89,6 +91,17 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             text = "SEND TO AI"
             setOnClickListener { sendToAi(messageInput.text.toString()) }
         }
+        val showHistory = Button(this).apply {
+            text = "CHAT HISTORY"
+            setOnClickListener { showConversationHistory() }
+        }
+        val clearHistory = Button(this).apply {
+            text = "CLEAR CHAT HISTORY"
+            setOnClickListener {
+                history.clear()
+                respond("Conversation history cleared.")
+            }
+        }
         val clearMemory = Button(this).apply {
             text = "CLEAR MEMORY"
             setOnClickListener {
@@ -105,6 +118,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.addView(speak, match())
         root.addView(help, match())
         root.addView(battery, match())
+        root.addView(showHistory, match())
+        root.addView(clearHistory, match())
         root.addView(clearMemory, match())
         setContentView(root)
     }
@@ -230,6 +245,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             .show()
     }
 
+    private fun showConversationHistory() {
+        val saved = history.messages()
+        val content = if (saved.isEmpty()) "No saved conversations yet." else saved.joinToString("\\n\\n") {
+            "${if (it.role == "user") "You" else "CHATENDER"}: ${it.content}"
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Recent chat history")
+            .setMessage(content)
+            .setPositiveButton("CLOSE", null)
+            .show()
+    }
+
     private fun sendToAi(rawMessage: String) {
         val message = rawMessage.trim()
         if (message.isEmpty()) {
@@ -249,10 +276,13 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         transcript.text = "You: $message\n\nCHATENDER: Thinking…"
         status.text = "CONNECTING TO AI…"
         aiExecutor.execute {
-            val answer = runCatching { OpenRouterClient(key, model).ask(message) }
+            val answer = runCatching { OpenRouterClient(key, model).ask(contextMessages) }
                 .getOrElse { "AI request failed: ${it.message ?: "Check your connection and provider settings."}" }
             runOnUiThread {
-                if (!isFinishing && !isDestroyed) respond(answer)
+                if (!isFinishing && !isDestroyed) {
+                    history.add("assistant", answer)
+                    respond(answer)
+                }
             }
         }
     }
