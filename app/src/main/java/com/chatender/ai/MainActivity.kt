@@ -32,6 +32,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var memory: ConversationMemory
     private lateinit var history: ConversationHistory
     private lateinit var apiKeyStore: SecureApiKeyStore
+    private lateinit var providerKeyStore: SecureProviderKeyStore
     private val aiExecutor = Executors.newSingleThreadExecutor()
     private lateinit var messageInput: EditText
     private val providerPreferences by lazy { getSharedPreferences("chatender_provider_settings", MODE_PRIVATE) }
@@ -42,6 +43,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         memory = ConversationMemory(this)
         history = ConversationHistory(this)
         apiKeyStore = SecureApiKeyStore(this)
+        providerKeyStore = SecureProviderKeyStore(this)
         tts = TextToSpeech(this, this)
         buildInterface()
     }
@@ -210,37 +212,59 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             orientation = LinearLayout.VERTICAL
             setPadding(36, 12, 36, 0)
         }
-        val keyInput = EditText(this).apply {
-            hint = "OpenRouter API key"
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setTextColor(0xFF111827.toInt())
-        }
-        val modelInput = EditText(this).apply {
-            hint = "Model (default: openrouter/free)"
-            inputType = InputType.TYPE_CLASS_TEXT
-            setTextColor(0xFF111827.toInt())
-            setText(providerPreferences.getString("model", "openrouter/free"))
-        }
+        fun field(hintText: String, value: String = "", secret: Boolean = false): EditText =
+            EditText(this).apply {
+                hint = hintText
+                inputType = if (secret) InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD else InputType.TYPE_CLASS_TEXT
+                setTextColor(0xFF111827.toInt())
+                setText(value)
+            }
+
+        val keyInput = field("OpenRouter API key", secret = true)
+        val generalModel = field("General model", providerPreferences.getString("general_model", providerPreferences.getString("model", "openrouter/free") ?: "openrouter/free") ?: "openrouter/free")
+        val codingModel = field("Coding model", providerPreferences.getString("coding_model", "openrouter/free") ?: "openrouter/free")
+        val memoryModel = field("Memory model", providerPreferences.getString("memory_model", "openrouter/free") ?: "openrouter/free")
+        val diagnosisModel = field("Diagnostics model", providerPreferences.getString("diagnosis_model", "openrouter/free") ?: "openrouter/free")
+        val voiceId = field("Voice ID (configuration only)", providerPreferences.getString("voice_id", AiRoleRouter.defaultVoiceId()) ?: AiRoleRouter.defaultVoiceId())
+
         panel.addView(keyInput, match())
-        panel.addView(modelInput, match())
+        panel.addView(generalModel, match())
+        panel.addView(codingModel, match())
+        panel.addView(memoryModel, match())
+        panel.addView(diagnosisModel, match())
+        panel.addView(voiceId, match())
+
         AlertDialog.Builder(this)
-            .setTitle("OpenRouter connection")
-            .setMessage("Your key is encrypted with Android Keystore and is not included in the app build.")
+            .setTitle("AI roles and secure settings")
+            .setMessage("All four roles currently use OpenRouter with separate model choices. Keys are encrypted on this device. Voice ID is saved as configuration; cloud voice synthesis is not connected yet.")
             .setView(panel)
             .setPositiveButton("SAVE") { _, _ ->
                 val key = keyInput.text.toString().trim()
-                val model = modelInput.text.toString().trim().ifBlank { "openrouter/free" }
+                val values = mapOf(
+                    "general_model" to generalModel.text.toString().trim(),
+                    "coding_model" to codingModel.text.toString().trim(),
+                    "memory_model" to memoryModel.text.toString().trim(),
+                    "diagnosis_model" to diagnosisModel.text.toString().trim(),
+                    "voice_id" to voiceId.text.toString().trim()
+                )
                 runCatching {
-                    if (key.isNotEmpty()) apiKeyStore.save(key)
-                    providerPreferences.edit().putString("model", model).apply()
+                    if (key.isNotEmpty()) {
+                        providerKeyStore.save("openrouter", key)
+                        apiKeyStore.save(key)
+                    }
+                    val editor = providerPreferences.edit()
+                    values.forEach { (name, value) -> if (value.isNotBlank()) editor.putString(name, value) }
+                    editor.putString("model", values["general_model"]?.ifBlank { "openrouter/free" } ?: "openrouter/free")
+                    editor.apply()
                 }.onSuccess {
-                    respond(if (key.isEmpty()) "Model settings saved. Existing API key was kept." else "OpenRouter key saved securely.")
-                }.onFailure { respond("Could not save provider settings: ${it.message ?: "unknown error"}") }
+                    respond(if (key.isEmpty()) "Role settings saved. Existing API key was kept." else "OpenRouter key and role settings saved securely.")
+                }.onFailure { respond("Could not save settings: ${it.message ?: "unknown error"}") }
             }
             .setNegativeButton("CANCEL", null)
-            .setNeutralButton("REMOVE KEY") { _, _ ->
+            .setNeutralButton("REMOVE KEYS") { _, _ ->
+                providerKeyStore.clear("openrouter")
                 apiKeyStore.clear()
-                respond("The saved OpenRouter key has been removed.")
+                respond("Saved OpenRouter keys have been removed.")
             }
             .show()
     }
@@ -263,7 +287,18 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             respond("Type or speak a message first.")
             return
         }
-        val key = runCatching { apiKeyStore.read() }.getOrElse {
+        val roleSettings = mapOf(
+            "coding_model" to (providerPreferences.getString("coding_model", "openrouter/free") ?: "openrouter/free"),
+            "memory_model" to (providerPreferences.getString("memory_model", "openrouter/free") ?: "openrouter/free"),
+            "diagnosis_model" to (providerPreferences.getString("diagnosis_model", "openrouter/free") ?: "openrouter/free"),
+            "general_model" to (providerPreferences.getString("general_model", providerPreferences.getString("model", "openrouter/free")) ?: "openrouter/free")
+        )
+        val route = AiRoleRouter(roleSettings).route(message)
+        if (route.providerId != "openrouter") {
+            respond("Provider '${route.providerId}' is not connected yet. Select OpenRouter for this role.")
+            return
+        }
+        val key = runCatching { providerKeyStore.read("openrouter") ?: apiKeyStore.read() }.getOrElse {
             respond("The saved API key could not be read. Remove it and save it again.")
             return
         }
@@ -271,14 +306,14 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
             respond("Connect OpenRouter first. Tap AI Provider Settings and add your API key.")
             return
         }
-        val model = providerPreferences.getString("model", "openrouter/free") ?: "openrouter/free"
+        val model = route.modelId
         messageInput.setText("")
         history.add("user", message)
         val contextMessages = history.messages()
         transcript.text = "You: $message\n\nCHATENDER: Thinking…"
         status.text = "CONNECTING TO AI…"
         aiExecutor.execute {
-            val answer = runCatching { OpenRouterClient(key, model).ask(contextMessages) }
+            val answer = runCatching { OpenRouterClient(key, model, route.role.instruction).ask(contextMessages) }
                 .getOrElse { "AI request failed: ${it.message ?: "Check your connection and provider settings."}" }
             runOnUiThread {
                 if (!isFinishing && !isDestroyed) {
