@@ -246,7 +246,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         val model = providerPreferences.getString("model", "openrouter/free") ?: "openrouter/free"
         messageInput.setText("")
-        transcript.text = "You: $message\\n\\nCHATENDER: Thinking…"
+        transcript.text = "You: $message\n\nCHATENDER: Thinking…"
         status.text = "CONNECTING TO AI…"
         aiExecutor.execute {
             val answer = runCatching { OpenRouterClient(key, model).ask(message) }
