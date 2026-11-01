@@ -24,10 +24,12 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var status: TextView
     private lateinit var transcript: TextView
     private val router = CommandRouter()
+    private lateinit var memory: ConversationMemory
     private val requestAudio = 41
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        memory = ConversationMemory(this)
         tts = TextToSpeech(this, this)
         buildInterface()
     }
@@ -119,6 +121,19 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     }
 
     private fun handleCommand(words: String) {
+        val command = words.trim()
+        when {
+            command.equals("what was my last command", ignoreCase = true) -> {
+                respond(memory.lastCommand()?.let { "Your last command was: $it" } ?: "I don't have a saved command yet.")
+                return
+            }
+            command.equals("forget my last command", ignoreCase = true) -> {
+                memory.forgetLastCommand()
+                respond("I've cleared the saved last command.")
+                return
+            }
+        }
+        if (command.isNotEmpty()) memory.rememberCommand(command)
         val battery = getSystemService(BATTERY_SERVICE) as BatteryManager
         val percent = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).takeIf { it in 0..100 }
         val result = router.route(words, percent)
