@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.BatteryManager
 import android.os.Bundle
+import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -122,8 +123,15 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val percent = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).takeIf { it in 0..100 }
         val result = router.route(words, percent)
         respond(result.reply)
-        if (result.action == CommandAction.WIFI_SETTINGS) {
-            startActivity(Intent(android.provider.Settings.ACTION_WIFI_SETTINGS))
+        val settingsAction = when (result.action) {
+            CommandAction.WIFI_SETTINGS -> Settings.ACTION_WIFI_SETTINGS
+            CommandAction.BLUETOOTH_SETTINGS -> Settings.ACTION_BLUETOOTH_SETTINGS
+            CommandAction.DEVICE_SETTINGS -> Settings.ACTION_SETTINGS
+            else -> null
+        }
+        settingsAction?.let { action ->
+            runCatching { startActivity(Intent(action)) }
+                .onFailure { respond("I couldn't open that settings screen on this device.") }
         }
     }
 
