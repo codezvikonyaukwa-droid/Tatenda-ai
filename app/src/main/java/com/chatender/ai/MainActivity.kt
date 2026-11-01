@@ -247,7 +247,7 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
 
     private fun showConversationHistory() {
         val saved = history.messages()
-        val content = if (saved.isEmpty()) "No saved conversations yet." else saved.joinToString("\\n\\n") {
+        val content = if (saved.isEmpty()) "No saved conversations yet." else saved.joinToString("\n\n") {
             "${if (it.role == "user") "You" else "CHATENDER"}: ${it.content}"
         }
         AlertDialog.Builder(this)
@@ -273,6 +273,8 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         }
         val model = providerPreferences.getString("model", "openrouter/free") ?: "openrouter/free"
         messageInput.setText("")
+        history.add("user", message)
+        val contextMessages = history.messages()
         transcript.text = "You: $message\n\nCHATENDER: Thinking…"
         status.text = "CONNECTING TO AI…"
         aiExecutor.execute {
