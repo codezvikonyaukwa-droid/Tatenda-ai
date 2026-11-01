@@ -8,7 +8,8 @@ import java.net.URL
 /** Small synchronous client. Call from a worker thread, never the Android main thread. */
 class OpenRouterClient(
     private val apiKey: String,
-    private val model: String = "openrouter/free"
+    private val model: String = "openrouter/free",
+    private val systemInstruction: String? = null
 ) {
     fun ask(userMessage: String): String =
         ask(listOf(ChatMessage("user", userMessage)))
@@ -28,6 +29,9 @@ class OpenRouterClient(
         }
         try {
             val history = JSONArray()
+            systemInstruction?.takeIf { it.isNotBlank() }?.let { instruction ->
+                history.put(JSONObject().put("role", "system").put("content", instruction.take(MAX_MESSAGE_LENGTH)))
+            }
             messages.takeLast(MAX_HISTORY_MESSAGES).forEach { message ->
                 if (message.role == "user" || message.role == "assistant") {
                     history.put(JSONObject()
