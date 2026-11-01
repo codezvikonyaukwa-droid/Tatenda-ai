@@ -2,6 +2,7 @@ package com.chatender.ai
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.BatteryManager
@@ -14,8 +15,12 @@ import android.speech.tts.TextToSpeech
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.text.InputType
+import android.widget.Toast
+import java.util.concurrent.Executors
 import java.util.Locale
 
 class MainActivity : Activity(), TextToSpeech.OnInitListener {
@@ -25,11 +30,16 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
     private lateinit var transcript: TextView
     private val router = CommandRouter()
     private lateinit var memory: ConversationMemory
+    private lateinit var apiKeyStore: SecureApiKeyStore
+    private val aiExecutor = Executors.newSingleThreadExecutor()
+    private lateinit var messageInput: EditText
+    private val providerPreferences by lazy { getSharedPreferences("chatender_provider_settings", MODE_PRIVATE) }
     private val requestAudio = 41
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         memory = ConversationMemory(this)
+        apiKeyStore = SecureApiKeyStore(this)
         tts = TextToSpeech(this, this)
         buildInterface()
     }
@@ -64,6 +74,21 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val speak = Button(this).apply { text = "SPEAK"; setOnClickListener { beginListening() } }
         val help = Button(this).apply { text = "HELP"; setOnClickListener { respond(router.route("help").reply) } }
         val battery = Button(this).apply { text = "BATTERY"; setOnClickListener { handleCommand("battery") } }
+        val provider = Button(this).apply {
+            text = "AI PROVIDER SETTINGS"
+            setOnClickListener { showProviderSettings() }
+        }
+        messageInput = EditText(this).apply {
+            hint = "Message CHATENDER AI"
+            setTextColor(0xFFF1F5F9.toInt())
+            setHintTextColor(0xFF9AA4B2.toInt())
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            maxLines = 3
+        }
+        val send = Button(this).apply {
+            text = "SEND TO AI"
+            setOnClickListener { sendToAi(messageInput.text.toString()) }
+        }
         val clearMemory = Button(this).apply {
             text = "CLEAR MEMORY"
             setOnClickListener {
@@ -74,6 +99,9 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         root.addView(title, match())
         root.addView(status, match())
         root.addView(transcript, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        root.addView(provider, match())
+        root.addView(messageInput, match())
+        root.addView(send, match())
         root.addView(speak, match())
         root.addView(help, match())
         root.addView(battery, match())
@@ -145,6 +173,10 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         val battery = getSystemService(BATTERY_SERVICE) as BatteryManager
         val percent = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY).takeIf { it in 0..100 }
         val result = router.route(words, percent)
+        if (result.action == CommandAction.UNKNOWN) {
+            sendToAi(command)
+            return
+        }
         respond(result.reply)
         val settingsAction = when (result.action) {
             CommandAction.WIFI_SETTINGS -> Settings.ACTION_WIFI_SETTINGS
@@ -155,6 +187,73 @@ class MainActivity : Activity(), TextToSpeech.OnInitListener {
         settingsAction?.let { action ->
             runCatching { startActivity(Intent(action)) }
                 .onFailure { respond("I couldn't open that settings screen on this device.") }
+        }
+    }
+
+    private fun showProviderSettings() {
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(36, 12, 36, 0)
+        }
+        val keyInput = EditText(this).apply {
+            hint = "OpenRouter API key"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setTextColor(0xFF111827.toInt())
+        }
+        val modelInput = EditText(this).apply {
+            hint = "Model (default: openrouter/free)"
+            inputType = InputType.TYPE_CLASS_TEXT
+            setTextColor(0xFF111827.toInt())
+            setText(providerPreferences.getString("model", "openrouter/free"))
+        }
+        panel.addView(keyInput, match())
+        panel.addView(modelInput, match())
+        AlertDialog.Builder(this)
+            .setTitle("OpenRouter connection")
+            .setMessage("Your key is encrypted with Android Keystore and is not included in the app build.")
+            .setView(panel)
+            .setPositiveButton("SAVE") { _, _ ->
+                val key = keyInput.text.toString().trim()
+                val model = modelInput.text.toString().trim().ifBlank { "openrouter/free" }
+                runCatching {
+                    if (key.isNotEmpty()) apiKeyStore.save(key)
+                    providerPreferences.edit().putString("model", model).apply()
+                }.onSuccess {
+                    respond(if (key.isEmpty()) "Model settings saved. Existing API key was kept." else "OpenRouter key saved securely.")
+                }.onFailure { respond("Could not save provider settings: ${it.message ?: "unknown error"}") }
+            }
+            .setNegativeButton("CANCEL", null)
+            .setNeutralButton("REMOVE KEY") { _, _ ->
+                apiKeyStore.clear()
+                respond("The saved OpenRouter key has been removed.")
+            }
+            .show()
+    }
+
+    private fun sendToAi(rawMessage: String) {
+        val message = rawMessage.trim()
+        if (message.isEmpty()) {
+            respond("Type or speak a message first.")
+            return
+        }
+        val key = runCatching { apiKeyStore.read() }.getOrElse {
+            respond("The saved API key could not be read. Remove it and save it again.")
+            return
+        }
+        if (key.isNullOrBlank()) {
+            respond("Connect OpenRouter first. Tap AI Provider Settings and add your API key.")
+            return
+        }
+        val model = providerPreferences.getString("model", "openrouter/free") ?: "openrouter/free"
+        messageInput.setText("")
+        transcript.text = "You: $message\\n\\nCHATENDER: Thinking…"
+        status.text = "CONNECTING TO AI…"
+        aiExecutor.execute {
+            val answer = runCatching { OpenRouterClient(key, model).ask(message) }
+                .getOrElse { "AI request failed: ${it.message ?: "Check your connection and provider settings."}" }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) respond(answer)
+            }
         }
     }
 
