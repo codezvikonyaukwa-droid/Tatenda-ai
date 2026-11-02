@@ -40,3 +40,10 @@ Open in Android Studio with JDK 17, sync Gradle, then run on device.
 APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
 Application ID: `com.chatender.ai`, version 1.0.0.
+
+
+## Desktop workspace (Windows 10)
+
+A separate desktop interface is available in `desktop/`. It uses a local Python bridge so the OpenRouter API key stays out of browser JavaScript and browser storage.
+
+See `desktop/README.md` for setup. Start the bridge from that folder with `py server.py`, enter your key in the hidden terminal prompt, then open `http://127.0.0.1:8765` in your browser. Python 3.8+ and an internet connection are required.
