@@ -16,6 +16,7 @@ jobs:
       - name: Validate desktop workspace
         run: |
           node --check desktop/app.js
+          python3 -m py_compile desktop/server.py
           test -s desktop/index.html
           test -s desktop/styles.css
           test -s desktop/README.md
